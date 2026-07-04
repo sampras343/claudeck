@@ -40,7 +40,7 @@
   "dependencies": {
     "express": "^5.1.0",
     "ws": "^8.18.0",
-    "chokidar": "^4.0.0",
+    "chokidar": "^5.0.0",
     "uuid": "^14.0.1"
   },
   "devDependencies": {

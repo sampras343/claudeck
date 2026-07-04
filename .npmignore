@@ -1,0 +1,14 @@
+client/src/
+client/node_modules/
+client/package.json
+client/package-lock.json
+client/tsconfig.json
+client/vite.config.ts
+server/src/
+server/tsconfig.json
+tsconfig.json
+node_modules/
+.claude/
+*.ts
+!*.d.ts
+*.map

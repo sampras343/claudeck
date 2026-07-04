@@ -1,0 +1,55 @@
+{
+  "name": "claudeck",
+  "version": "1.0.0",
+  "description": "Interactive dashboard for monitoring and managing multiple Claude Code CLI instances",
+  "type": "module",
+  "bin": {
+    "claudeck": "./bin/claudeck.js"
+  },
+  "files": [
+    "bin/",
+    "server/dist/",
+    "server/scripts/",
+    "client/dist/"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,client -c blue,green \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "tsx watch server/src/index.ts",
+    "dev:client": "cd client && npx vite --port 5173",
+    "build": "npm run build:client && npm run build:server",
+    "build:client": "cd client && npx vite build",
+    "build:server": "npx tsc -p server/tsconfig.json",
+    "start": "node bin/claudeck.js",
+    "typecheck": "npx tsc --noEmit -p server/tsconfig.json && cd client && npx tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "dashboard",
+    "terminal",
+    "monitor",
+    "cli",
+    "ai",
+    "anthropic"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "express": "^5.1.0",
+    "ws": "^8.18.0",
+    "chokidar": "^4.0.0",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/ws": "^8.18.0",
+    "@types/node": "^22.0.0",
+    "@types/uuid": "^10.0.0",
+    "typescript": "^5.8.0",
+    "tsx": "^4.19.0",
+    "concurrently": "^9.1.0"
+  }
+}

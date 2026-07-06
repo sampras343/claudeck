@@ -6,8 +6,20 @@ Modes:
   pty-inject.py <pid> --select <index>    Arrow-down <index> times + Enter (for TUI option selectors)
   pty-inject.py <pid> --select <index> --other-text <text>
                                           Navigate to "Other" option, press Enter, then type text + Enter
+  pty-inject.py <pid> --select-last       Deny the current permission prompt (sends 'n' key)
+  pty-inject.py <pid> --allow             Send 'y' key to accept the current permission prompt
+  pty-inject.py <pid> --deny              Send 'n' key to deny the current permission prompt
 
 Uses pidfd_getfd to duplicate the PTY master from the terminal emulator.
+
+Claude Code keybinding notes:
+  The Confirmation context maps single keys to prompt actions:
+    y -> confirm:yes (allow)    n -> confirm:no (deny)
+    Enter -> confirm:yes        Escape -> confirm:no
+    up/down -> confirm:previous/confirm:next (navigate options)
+  Sending 'y' or 'n' is far more reliable than arrow-key navigation
+  because escape sequences (\x1b[B) require precise timing to avoid
+  being batched with subsequent keystrokes in React's event loop.
 """
 import argparse
 import ctypes
@@ -23,6 +35,26 @@ SYS_pidfd_getfd = 438
 
 ARROW_DOWN = b"\x1b[B"
 ENTER = b"\r"
+ESCAPE = b"\x1b"
+
+# Claude Code's ink TUI registers keybindings in a "Confirmation" context:
+#   y -> confirm:yes (allow)
+#   n -> confirm:no  (deny)
+# These are single-character shortcuts that bypass arrow-key navigation entirely,
+# avoiding the timing/batching issues that plague escape-sequence injection.
+CONFIRM_YES = b"y"
+CONFIRM_NO = b"n"
+
+# Inter-keystroke delay must exceed one Node.js event-loop iteration so each
+# key event lands in its own processInput → discreteUpdates batch.  Claude Code's
+# ink framework reads stdin in a while(read()) loop; if two writes land between
+# iterations they are concatenated, parsed, and dispatched inside a single React
+# batch.  Value-based setState inside that batch would see stale closure state.
+# 150 ms is conservative but reliable.
+ARROW_DELAY = 0.15
+# Extra pause before the final Enter so React commits the last arrow-down's
+# state update before the Enter handler reads selectedIndex.
+PRE_ENTER_DELAY = 0.20
 
 libc = ctypes.CDLL("libc.so.6", use_errno=True)
 
@@ -92,7 +124,7 @@ def get_master_fd(pid: int) -> int:
 def inject_raw(pid: int, text: str):
     fd = get_master_fd(pid)
     try:
-        os.write(fd, (text + "\n").encode())
+        os.write(fd, text.encode() + b"\r")
     finally:
         os.close(fd)
 
@@ -100,18 +132,78 @@ def inject_raw(pid: int, text: str):
 def inject_select(pid: int, index: int, other_text: str | None = None):
     fd = get_master_fd(pid)
     try:
-        # Navigate down to the desired option
-        for _ in range(index):
-            os.write(fd, ARROW_DOWN)
-            time.sleep(0.03)
+        if index == 0 and other_text is None:
+            # First option: Enter alone suffices (no navigation needed).
+            os.write(fd, ENTER)
+        else:
+            # Navigate down to the desired option.
+            # Each arrow-down must land in a separate Node.js event-loop iteration
+            # so that React's state update from the previous one is committed before
+            # the next dispatch.
+            for _ in range(index):
+                os.write(fd, ARROW_DOWN)
+                time.sleep(ARROW_DELAY)
 
-        # Press Enter to select
-        os.write(fd, ENTER)
+            # Extra pause so the final arrow-down's state update is committed
+            # before the Enter handler reads the selected index.
+            time.sleep(PRE_ENTER_DELAY)
+            os.write(fd, ENTER)
 
         # If "Other" mode, wait for the text input to appear, then type
         if other_text is not None:
-            time.sleep(0.15)
+            time.sleep(0.3)
             os.write(fd, (other_text + "\n").encode())
+    finally:
+        os.close(fd)
+
+
+def inject_select_last(pid: int):
+    """Navigate to the last option and press Enter.
+
+    Sends enough arrow-downs to reach the bottom (ink doesn't wrap),
+    with delays between each so React commits each state update.
+    """
+    fd = get_master_fd(pid)
+    try:
+        for _ in range(10):
+            os.write(fd, ARROW_DOWN)
+            time.sleep(ARROW_DELAY)
+        time.sleep(PRE_ENTER_DELAY)
+        os.write(fd, ENTER)
+    finally:
+        os.close(fd)
+
+
+def inject_allow(pid: int):
+    """Accept the current permission prompt — Enter on first (default) option."""
+    fd = get_master_fd(pid)
+    try:
+        os.write(fd, ENTER)
+    finally:
+        os.close(fd)
+
+
+def inject_deny(pid: int):
+    """Deny the current permission prompt — navigate to last option and Enter."""
+    inject_select_last(pid)
+
+
+def inject_sigint(pid: int):
+    """Send Ctrl+C (SIGINT) to cancel the current operation."""
+    fd = get_master_fd(pid)
+    try:
+        os.write(fd, b"\x03")
+    finally:
+        os.close(fd)
+
+
+def inject_exit(pid: int):
+    """Send Ctrl+C then /exit to terminate the Claude session."""
+    fd = get_master_fd(pid)
+    try:
+        os.write(fd, b"\x03")
+        time.sleep(0.3)
+        os.write(fd, b"/exit\n")
     finally:
         os.close(fd)
 
@@ -122,15 +214,30 @@ def main():
     parser.add_argument("--raw", type=str, default=None)
     parser.add_argument("--select", type=int, default=None)
     parser.add_argument("--other-text", type=str, default=None)
+    parser.add_argument("--select-last", action="store_true", help="Deny permission prompt (sends 'n' key)")
+    parser.add_argument("--allow", action="store_true", help="Accept permission prompt (sends 'y' key)")
+    parser.add_argument("--deny", action="store_true", help="Deny permission prompt (sends 'n' key)")
+    parser.add_argument("--sigint", action="store_true", help="Send Ctrl+C")
+    parser.add_argument("--exit", dest="do_exit", action="store_true", help="Send Ctrl+C + /exit")
     args = parser.parse_args()
 
     try:
-        if args.select is not None:
+        if args.allow:
+            inject_allow(args.pid)
+        elif args.deny:
+            inject_deny(args.pid)
+        elif args.select_last:
+            inject_select_last(args.pid)
+        elif args.sigint:
+            inject_sigint(args.pid)
+        elif args.do_exit:
+            inject_exit(args.pid)
+        elif args.select is not None:
             inject_select(args.pid, args.select, args.other_text)
         elif args.raw is not None:
             inject_raw(args.pid, args.raw)
         else:
-            parser.error("Must specify --raw or --select")
+            parser.error("Must specify --raw, --select, --select-last, --allow, --deny, --sigint, or --exit")
         print("OK")
     except Exception as e:
         print(str(e), file=sys.stderr)

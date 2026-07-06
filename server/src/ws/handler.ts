@@ -5,6 +5,7 @@ import type { InstanceRegistry } from '../services/InstanceRegistry.js';
 import type { GroupManager } from '../services/GroupManager.js';
 import type { InputRelay } from '../services/InputRelay.js';
 import type { AutoYesManager } from '../services/AutoYesManager.js';
+import type { NotificationDispatcher } from '../services/NotificationDispatcher.js';
 import type { TrackedInstance, AutoYesLogEntry, Notification } from '../types.js';
 import type { ServerMessage, ClientMessage } from './protocol.js';
 
@@ -15,6 +16,8 @@ export class WebSocketHandler {
     private groupManager: GroupManager,
     private inputRelay: InputRelay,
     private autoYesManager: AutoYesManager,
+    _reserved?: unknown,
+    private notificationDispatcher?: NotificationDispatcher,
   ) {
     this.setup();
   }
@@ -66,6 +69,29 @@ export class WebSocketHandler {
         type: 'notification',
         notification,
       });
+      // Also dispatch to webhooks
+      if (this.notificationDispatcher) {
+        this.notificationDispatcher.dispatch(notification);
+      }
+    });
+
+    // Dispatch notifications when instances start waiting
+    this.registry.on('instances:changed', (instances: TrackedInstance[]) => {
+      if (!this.notificationDispatcher) return;
+      for (const instance of instances) {
+        if (instance.status === 'waiting' && instance.needs && !instance.autoYes) {
+          const notification: Notification = {
+            id: `waiting-${instance.sessionId}-${Date.now()}`,
+            type: 'input-needed',
+            sessionId: instance.sessionId,
+            instanceName: instance.name,
+            message: `Instance is waiting for input: ${instance.needs}`,
+            timestamp: Date.now(),
+            safetyLevel: instance.safetyLevel,
+          };
+          this.notificationDispatcher.dispatch(notification);
+        }
+      }
     });
   }
 

@@ -1,4 +1,4 @@
-import type { SafetyLevel } from '../types';
+import type { SafetyLevel, PermissionLevel } from '../types';
 
 export function abbreviatePath(cwd: string): string {
   const home = '/home/' + cwd.split('/').filter(Boolean)[1] || '';
@@ -62,6 +62,19 @@ export function safetyColor(level: SafetyLevel): string {
     case 'RISKY':
       return 'text-orange-400 bg-orange-500/20 border-orange-500/30';
     case 'DANGEROUS':
+      return 'text-red-400 bg-red-500/20 border-red-500/30';
+  }
+}
+
+export function permissionLevelColor(level: PermissionLevel): string {
+  switch (level) {
+    case 'RESTRICTIVE':
+      return 'text-green-400 bg-green-500/20 border-green-500/30';
+    case 'MODERATE':
+      return 'text-yellow-400 bg-yellow-500/20 border-yellow-500/30';
+    case 'PERMISSIVE':
+      return 'text-orange-400 bg-orange-500/20 border-orange-500/30';
+    case 'UNRESTRICTED':
       return 'text-red-400 bg-red-500/20 border-red-500/30';
   }
 }

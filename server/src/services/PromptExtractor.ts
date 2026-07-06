@@ -18,6 +18,7 @@ export interface ToolPermissionPrompt {
   toolName: string;
   toolUseId: string;
   input: Record<string, unknown>;
+  options: Array<{ label: string; value: string }>;
 }
 
 export interface FreeTextPrompt {
@@ -26,6 +27,53 @@ export interface FreeTextPrompt {
 }
 
 export type PendingPrompt = AskUserPrompt | ToolPermissionPrompt | FreeTextPrompt | { type: 'unknown' };
+
+function inferPermissionOptions(
+  toolName: string,
+  input: Record<string, unknown>,
+): Array<{ label: string; value: string }> {
+  const options: Array<{ label: string; value: string }> = [
+    { label: 'Yes', value: 'yes' },
+  ];
+
+  // Infer the "always allow" option based on tool type
+  let patternDesc: string | null = null;
+
+  if (toolName === 'Bash' && typeof input.command === 'string') {
+    const prefix = input.command.split(/\s+/)[0];
+    if (prefix) {
+      patternDesc = prefix;
+    }
+  } else if (
+    (toolName === 'Read' || toolName === 'Write' || toolName === 'Edit') &&
+    typeof input.file_path === 'string'
+  ) {
+    const dir = path.dirname(input.file_path as string);
+    if (dir && dir !== '.') {
+      patternDesc = dir;
+    }
+  } else if (toolName === 'WebFetch' && typeof input.url === 'string') {
+    try {
+      const domain = new URL(input.url as string).hostname;
+      if (domain) {
+        patternDesc = domain;
+      }
+    } catch {
+      // invalid URL, skip the always-allow option
+    }
+  }
+
+  if (patternDesc) {
+    options.push({
+      label: `Yes, and always allow ${patternDesc}`,
+      value: 'always-pattern',
+    });
+  }
+
+  options.push({ label: 'No', value: 'no' });
+
+  return options;
+}
 
 function encodeCwd(cwd: string): string {
   return cwd.replace(/[/_]/g, '-');
@@ -65,11 +113,13 @@ export function extractPendingPrompt(sessionId: string, cwd: string): PendingPro
               };
               lastAssistantText = null;
             } else {
+              const toolInput = block.input ?? {};
               lastAssistantToolUse = {
                 type: 'tool-permission',
                 toolName: block.name,
                 toolUseId: block.id,
-                input: block.input ?? {},
+                input: toolInput,
+                options: inferPermissionOptions(block.name, toolInput),
               };
               lastAssistantText = null;
             }

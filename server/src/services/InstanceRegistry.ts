@@ -4,7 +4,9 @@ import type { SessionWatcher } from '../watchers/SessionWatcher.js';
 import type { JobWatcher } from '../watchers/JobWatcher.js';
 import type { RosterWatcher } from '../watchers/RosterWatcher.js';
 import type { GroupManager } from './GroupManager.js';
+import type { StatusLineReceiver } from './StatusLineReceiver.js';
 import { assessSafety } from './SafetyAssessor.js';
+import { computePermissionLevel } from './PermissionAnalyzer.js';
 import type { TrackedInstance, SessionEntry, JobState } from '../types.js';
 
 export class InstanceRegistry extends EventEmitter {
@@ -20,6 +22,7 @@ export class InstanceRegistry extends EventEmitter {
     private jobWatcher: JobWatcher,
     private rosterWatcher: RosterWatcher,
     private groupManager: GroupManager,
+    private statusLineReceiver?: StatusLineReceiver,
   ) {
     super();
   }
@@ -161,6 +164,8 @@ export class InstanceRegistry extends EventEmitter {
       safetyLevel = assessSafety(needs).level;
     }
 
+    const permResult = computePermissionLevel(session.cwd);
+
     const instance: TrackedInstance = {
       pid: session.pid,
       sessionId: session.sessionId,
@@ -181,7 +186,34 @@ export class InstanceRegistry extends EventEmitter {
       groupId: groupId ?? undefined,
       autoYes: this.autoYesSet.has(sessionId),
       safetyLevel,
+      permissionLevel: permResult.level,
+      permissionRuleCount: permResult.ruleCount,
     };
+
+    // Merge status line data if available
+    if (this.statusLineReceiver && session.name) {
+      const statusLine = this.statusLineReceiver.getForSession(session.name);
+      if (statusLine) {
+        if (statusLine.context_window?.remaining_percentage != null) {
+          instance.contextWindowPercent = statusLine.context_window.remaining_percentage;
+        }
+        if (statusLine.pr?.number != null && statusLine.pr?.review_state) {
+          instance.linkedPR = {
+            number: statusLine.pr.number,
+            reviewState: statusLine.pr.review_state,
+          };
+        }
+        if (statusLine.worktree?.name && statusLine.worktree?.branch) {
+          instance.worktree = {
+            name: statusLine.worktree.name,
+            branch: statusLine.worktree.branch,
+          };
+        }
+        if (statusLine.model?.display_name) {
+          instance.modelDisplayName = statusLine.model.display_name;
+        }
+      }
+    }
 
     this.instances.set(sessionId, instance);
     this.scheduleEmit();

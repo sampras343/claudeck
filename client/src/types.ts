@@ -1,4 +1,5 @@
 export type SafetyLevel = 'SAFE' | 'MODERATE' | 'RISKY' | 'DANGEROUS';
+export type PermissionLevel = 'RESTRICTIVE' | 'MODERATE' | 'PERMISSIVE' | 'UNRESTRICTED';
 
 export interface TrackedInstance {
   pid: number;
@@ -20,6 +21,12 @@ export interface TrackedInstance {
   groupId?: string;
   autoYes: boolean;
   safetyLevel?: SafetyLevel;
+  contextWindowPercent?: number;
+  linkedPR?: { number: number; reviewState: string };
+  worktree?: { name: string; branch: string };
+  modelDisplayName?: string;
+  permissionLevel?: PermissionLevel;
+  permissionRuleCount?: number;
 }
 
 export interface Group {
@@ -76,3 +83,33 @@ export type ClientMessage =
   | { type: 'group:assign'; sessionId: string; groupId: string | null }
   | { type: 'allow-always'; sessionId: string; toolPattern: string }
   | { type: 'ping' };
+
+export interface ParsedPermissionRule {
+  raw: string;
+  tool: string;
+  pattern?: string;
+  category: string;
+  points: number;
+  source: 'global' | 'project-shared' | 'project-local';
+}
+
+export interface PermissionProfile {
+  level: PermissionLevel;
+  score: number;
+  ruleCount: number;
+  rules: ParsedPermissionRule[];
+  sources: {
+    global: string[];
+    projectShared: string[];
+    projectLocal: string[];
+  };
+}
+
+export interface SearchResult {
+  sessionId: string;
+  cwd: string;
+  timestamp: number;
+  role: string;
+  snippet: string;
+  score: number;
+}

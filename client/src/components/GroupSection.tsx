@@ -9,6 +9,9 @@ interface GroupSectionProps {
   onReply: (sessionId: string, text: string) => void;
   onAutoYesToggle: (sessionId: string, enabled: boolean) => void;
   onViewPrompt: (instance: TrackedInstance) => void;
+  onCancel?: (instance: TrackedInstance) => void;
+  onStop?: (instance: TrackedInstance) => void;
+  onViewPermissions?: (instance: TrackedInstance) => void;
   onDrop: (sessionId: string, groupId: string) => void;
 }
 
@@ -19,6 +22,9 @@ export function GroupSection({
   onReply,
   onAutoYesToggle,
   onViewPrompt,
+  onCancel,
+  onStop,
+  onViewPermissions,
   onDrop,
 }: GroupSectionProps) {
   const [dragOver, setDragOver] = useState(false);
@@ -91,6 +97,9 @@ export function GroupSection({
                   onReply={onReply}
                   onAutoYesToggle={onAutoYesToggle}
                   onViewPrompt={onViewPrompt}
+                  onCancel={onCancel}
+                  onStop={onStop}
+                  onViewPermissions={onViewPermissions}
                 />
               ))}
             </div>

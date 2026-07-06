@@ -2,12 +2,16 @@ import type { TrackedInstance } from '../types';
 import { abbreviatePath, formatUptime, formatTokens } from '../utils/formatters';
 import { StatusBadge } from './StatusBadge';
 import { AutoYesToggle } from './AutoYesToggle';
+import { PermissionBadge } from './PermissionBadge';
 
 interface ScorecardProps {
   instance: TrackedInstance;
   onReply: (sessionId: string, text: string) => void;
   onAutoYesToggle: (sessionId: string, enabled: boolean) => void;
   onViewPrompt: (instance: TrackedInstance) => void;
+  onCancel?: (instance: TrackedInstance) => void;
+  onStop?: (instance: TrackedInstance) => void;
+  onViewPermissions?: (instance: TrackedInstance) => void;
   onDragStart?: (e: React.DragEvent, sessionId: string) => void;
 }
 
@@ -21,7 +25,7 @@ function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string;
   );
 }
 
-export function Scorecard({ instance, onReply, onAutoYesToggle, onViewPrompt, onDragStart }: ScorecardProps) {
+export function Scorecard({ instance, onReply, onAutoYesToggle, onViewPrompt, onCancel, onStop, onViewPermissions, onDragStart }: ScorecardProps) {
   const isWaiting = instance.status === 'waiting';
 
   return (
@@ -67,7 +71,7 @@ export function Scorecard({ instance, onReply, onAutoYesToggle, onViewPrompt, on
             </svg>
           }
           label="Model"
-          value={instance.model || 'Unknown'}
+          value={instance.modelDisplayName || instance.model || 'Unknown'}
         />
         <InfoRow
           icon={
@@ -78,6 +82,21 @@ export function Scorecard({ instance, onReply, onAutoYesToggle, onViewPrompt, on
           label="Version"
           value={instance.version}
         />
+        {instance.permissionLevel && (
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-gray-500 flex-shrink-0">
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+              </svg>
+            </span>
+            <span className="text-gray-500 w-16 flex-shrink-0">Perms</span>
+            <PermissionBadge
+              level={instance.permissionLevel}
+              ruleCount={instance.permissionRuleCount}
+              onClick={() => onViewPermissions?.(instance)}
+            />
+          </div>
+        )}
         <InfoRow
           icon={
             <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -132,6 +151,96 @@ export function Scorecard({ instance, onReply, onAutoYesToggle, onViewPrompt, on
             </div>
           </div>
         )}
+
+        {/* Context Window Bar */}
+        {instance.contextWindowPercent != null && (
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-gray-500 flex-shrink-0">
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 7v10c0 2 1 3 3 3h10c2 0 3-1 3-3V7c0-2-1-3-3-3H7c-2 0-3 1-3 3z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6" />
+              </svg>
+            </span>
+            <span className="text-gray-500 w-16 flex-shrink-0">Context</span>
+            <div className="flex-1 flex items-center gap-2">
+              <div className="flex-1 bg-gray-800 rounded-full h-2">
+                <div
+                  className={`h-2 rounded-full ${
+                    instance.contextWindowPercent > 50
+                      ? 'bg-green-500'
+                      : instance.contextWindowPercent >= 20
+                        ? 'bg-yellow-500'
+                        : 'bg-red-500'
+                  }`}
+                  style={{ width: `${instance.contextWindowPercent}%` }}
+                />
+              </div>
+              <span className="text-gray-300 text-xs flex-shrink-0">{instance.contextWindowPercent}%</span>
+            </div>
+          </div>
+        )}
+
+        {/* PR Badge */}
+        {instance.linkedPR && (
+          <a href="#" className="block">
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-gray-500 flex-shrink-0">
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 3v12m0 0a3 3 0 103 3V6a3 3 0 10-3-3m12 12a3 3 0 10-3-3V6a3 3 0 103-3" />
+                </svg>
+              </span>
+              <span className="text-gray-500 w-16 flex-shrink-0">PR</span>
+              <span className="text-gray-300 truncate flex items-center gap-1.5">
+                <span>PR #{instance.linkedPR.number}</span>
+                {instance.linkedPR.reviewState === 'approved' && (
+                  <span className="flex items-center gap-0.5 text-green-400">
+                    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span className="text-xs">Approved</span>
+                  </span>
+                )}
+                {instance.linkedPR.reviewState === 'changes_requested' && (
+                  <span className="flex items-center gap-0.5 text-red-400">
+                    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    <span className="text-xs">Changes</span>
+                  </span>
+                )}
+                {instance.linkedPR.reviewState === 'pending' && (
+                  <span className="flex items-center gap-0.5 text-yellow-400">
+                    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span className="text-xs">Pending</span>
+                  </span>
+                )}
+                {instance.linkedPR.reviewState === 'draft' && (
+                  <span className="flex items-center gap-0.5 text-gray-400">
+                    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    <span className="text-xs">Draft</span>
+                  </span>
+                )}
+              </span>
+            </div>
+          </a>
+        )}
+
+        {/* Worktree Indicator */}
+        {instance.worktree && (
+          <InfoRow
+            icon={
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 3v12m6-6v6m0 0l-3-3m3 3l3-3m3-9v12" />
+              </svg>
+            }
+            label="WT"
+            value={`${instance.worktree.name}@${instance.worktree.branch}`}
+          />
+        )}
       </div>
 
       {/* Waiting Banner */}
@@ -150,11 +259,33 @@ export function Scorecard({ instance, onReply, onAutoYesToggle, onViewPrompt, on
       )}
 
       {/* Footer */}
-      <div className="mt-3 pt-3 border-t border-gray-800">
+      <div className="mt-3 pt-3 border-t border-gray-800 space-y-2">
         <AutoYesToggle
           enabled={instance.autoYes}
           onChange={(enabled) => onAutoYesToggle(instance.sessionId, enabled)}
         />
+        <div className="flex gap-2">
+          <button
+            onClick={() => onCancel?.(instance)}
+            title="Cancel current operation (Ctrl+C)"
+            className="flex-1 flex items-center justify-center gap-1 rounded-lg border border-gray-700 bg-gray-800 px-2 py-1.5 text-xs text-gray-400 hover:border-orange-500/50 hover:text-orange-400 hover:bg-orange-500/10 transition-colors"
+          >
+            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+            Cancel
+          </button>
+          <button
+            onClick={() => onStop?.(instance)}
+            title="Stop and exit Claude session"
+            className="flex-1 flex items-center justify-center gap-1 rounded-lg border border-gray-700 bg-gray-800 px-2 py-1.5 text-xs text-gray-400 hover:border-red-500/50 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+          >
+            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5.636 5.636a9 9 0 1012.728 0M12 3v9" />
+            </svg>
+            Stop
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -16,6 +16,7 @@ interface ToolPermissionPrompt {
   type: 'tool-permission';
   toolName: string;
   input: Record<string, string>;
+  options?: Array<{ label: string; value: string }>;
 }
 
 interface FreeTextPrompt {
@@ -213,19 +214,20 @@ function ToolPermissionView({
   const command = prompt.input.command ?? prompt.input.file_path ?? JSON.stringify(prompt.input);
   const baseCmd = typeof command === 'string' ? command.split(/\s+/)[0] : '';
 
-  const handleAllowAlways = () => {
-    if (onAllowAlways && baseCmd) {
-      onAllowAlways(instance.sessionId, `${prompt.toolName}(${baseCmd}:*)`);
+  const handleOptionClick = (value: string) => {
+    // For "always" options, also write to settings.local.json via onAllowAlways
+    if (onAllowAlways && value.startsWith('always')) {
+      if (value === 'always-tool') {
+        onAllowAlways(instance.sessionId, prompt.toolName);
+      } else {
+        // always-pattern or any other always-* variant: use command-level pattern
+        onAllowAlways(instance.sessionId, `${prompt.toolName}(${baseCmd}:*)`);
+      }
     }
-    onReply('yes');
+    onReply(value);
   };
 
-  const handleAllowTool = () => {
-    if (onAllowAlways) {
-      onAllowAlways(instance.sessionId, prompt.toolName);
-    }
-    onReply('yes');
-  };
+  const hasOptions = prompt.options && prompt.options.length > 0;
 
   return (
     <div>
@@ -239,22 +241,50 @@ function ToolPermissionView({
         <pre className="font-mono text-sm text-amber-300 whitespace-pre-wrap break-all">{command}</pre>
       </div>
       <div className="space-y-2">
-        <div className="flex gap-2">
-          <button onClick={() => onReply('yes')} className="flex-1 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-500 transition-colors">
-            Allow once
-          </button>
-          <button onClick={() => onReply('no')} className="flex-1 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500 transition-colors">
-            Deny
-          </button>
-        </div>
-        <div className="flex gap-2">
-          <button onClick={handleAllowAlways} className="flex-1 rounded-lg border border-green-600/40 bg-green-600/10 px-3 py-2 text-sm font-medium text-green-400 hover:bg-green-600/20 transition-colors truncate" title={`Always allow ${prompt.toolName}(${baseCmd}:*)`}>
-            Always allow <span className="font-mono text-xs">{baseCmd}</span>
-          </button>
-          <button onClick={handleAllowTool} className="flex-1 rounded-lg border border-blue-600/40 bg-blue-600/10 px-3 py-2 text-sm font-medium text-blue-400 hover:bg-blue-600/20 transition-colors truncate" title={`Always allow all ${prompt.toolName} commands`}>
-            Always allow <span className="font-mono text-xs">{prompt.toolName}</span>
-          </button>
-        </div>
+        {hasOptions ? (
+          /* Dynamic options from server */
+          prompt.options!.map((opt) => {
+            let className: string;
+            if (opt.value === 'no') {
+              className = 'w-full rounded-lg border border-red-600/40 bg-transparent px-4 py-2 text-sm font-medium text-red-400 hover:bg-red-600/20 transition-colors';
+            } else if (opt.value === 'yes') {
+              className = 'w-full rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-500 transition-colors';
+            } else if (opt.value.startsWith('always')) {
+              className = 'w-full rounded-lg border border-blue-600/40 bg-blue-600/10 px-4 py-2 text-sm font-medium text-blue-400 hover:bg-blue-600/20 transition-colors';
+            } else {
+              className = 'w-full rounded-lg border border-gray-600 bg-gray-800 px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-700 transition-colors';
+            }
+            return (
+              <button
+                key={opt.value}
+                onClick={() => handleOptionClick(opt.value)}
+                className={className}
+              >
+                {opt.label}
+              </button>
+            );
+          })
+        ) : (
+          /* Fallback: hardcoded buttons for backward compatibility */
+          <>
+            <div className="flex gap-2">
+              <button onClick={() => handleOptionClick('yes')} className="flex-1 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-500 transition-colors">
+                Allow once
+              </button>
+              <button onClick={() => handleOptionClick('no')} className="flex-1 rounded-lg border border-red-600/40 bg-transparent px-4 py-2 text-sm font-medium text-red-400 hover:bg-red-600/20 transition-colors">
+                Deny
+              </button>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => handleOptionClick('always-pattern')} className="flex-1 rounded-lg border border-blue-600/40 bg-blue-600/10 px-3 py-2 text-sm font-medium text-blue-400 hover:bg-blue-600/20 transition-colors truncate" title={`Always allow ${prompt.toolName}(${baseCmd}:*)`}>
+                Always allow <span className="font-mono text-xs">{baseCmd}</span>
+              </button>
+              <button onClick={() => handleOptionClick('always-tool')} className="flex-1 rounded-lg border border-blue-600/40 bg-blue-600/10 px-3 py-2 text-sm font-medium text-blue-400 hover:bg-blue-600/20 transition-colors truncate" title={`Always allow all ${prompt.toolName} commands`}>
+                Always allow <span className="font-mono text-xs">{prompt.toolName}</span>
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

@@ -7,7 +7,7 @@ import type { TrackedInstance, AutoYesLogEntry, Notification } from '../types.js
 
 export class AutoYesManager extends EventEmitter {
   private log: AutoYesLogEntry[] = [];
-  private pendingChecks = new Set<string>();
+  private lastHandledNeeds = new Map<string, string>();
   private enabledSessions = new Set<string>();
 
   constructor(
@@ -23,8 +23,14 @@ export class AutoYesManager extends EventEmitter {
   setAutoYes(sessionId: string, enabled: boolean): void {
     if (enabled) {
       this.enabledSessions.add(sessionId);
+      // Immediately process current state when toggled on
+      const instance = this.registry.getBySessionId(sessionId);
+      if (instance && instance.status === 'waiting' && instance.needs) {
+        this.handleWaitingInstance(instance);
+      }
     } else {
       this.enabledSessions.delete(sessionId);
+      this.lastHandledNeeds.delete(sessionId);
     }
   }
 
@@ -36,61 +42,58 @@ export class AutoYesManager extends EventEmitter {
     return [...this.log];
   }
 
-  private async processInstances(instances: TrackedInstance[]): Promise<void> {
+  private processInstances(instances: TrackedInstance[]): void {
     for (const instance of instances) {
-      if (
-        instance.status === 'waiting' &&
-        instance.autoYes &&
-        instance.needs
-      ) {
-        // Create a unique key for this waiting state to prevent duplicates
-        const checkKey = `${instance.sessionId}:${instance.needs}`;
-        if (this.pendingChecks.has(checkKey)) continue;
-        this.pendingChecks.add(checkKey);
-
-        const assessment = assessSafety(instance.needs);
-        const entry: AutoYesLogEntry = {
-          sessionId: instance.sessionId,
-          instanceName: instance.name,
-          timestamp: Date.now(),
-          needs: instance.needs,
-          safetyLevel: assessment.level,
-          action: 'deferred-to-user',
-          reason: assessment.reason,
-        };
-
-        if (assessment.level === 'SAFE' || assessment.level === 'MODERATE') {
-          // Auto-approve
-          try {
-            await this.inputRelay.sendReply(instance, 'yes');
-            entry.action = 'auto-approved';
-          } catch (err) {
-            entry.action = 'deferred-to-user';
-            entry.reason = `Relay failed: ${(err as Error).message}`;
-          }
-        } else {
-          // RISKY or DANGEROUS: defer to user
-          const notification: Notification = {
-            id: uuidv4(),
-            type: 'input-needed',
-            sessionId: instance.sessionId,
-            instanceName: instance.name,
-            message: `${assessment.level} action requires approval: ${instance.needs}`,
-            timestamp: Date.now(),
-            safetyLevel: assessment.level,
-          };
-          this.emit('notification', notification);
-        }
-
-        this.log.push(entry);
-        this.emit('autoyes:action', entry);
-
-        // Clean up pending check after the instance state moves on
-        // Use a timeout to allow the state to settle
-        setTimeout(() => {
-          this.pendingChecks.delete(checkKey);
-        }, 5000);
+      if (instance.status === 'waiting' && instance.autoYes && instance.needs) {
+        this.handleWaitingInstance(instance);
+      }
+      if (instance.status !== 'waiting') {
+        this.lastHandledNeeds.delete(instance.sessionId);
       }
     }
+  }
+
+  private async handleWaitingInstance(instance: TrackedInstance): Promise<void> {
+    if (!instance.needs) return;
+
+    // Skip if we already handled this exact prompt
+    if (this.lastHandledNeeds.get(instance.sessionId) === instance.needs) return;
+    this.lastHandledNeeds.set(instance.sessionId, instance.needs);
+
+    const assessment = assessSafety(instance.needs);
+    const entry: AutoYesLogEntry = {
+      sessionId: instance.sessionId,
+      instanceName: instance.name,
+      timestamp: Date.now(),
+      needs: instance.needs,
+      safetyLevel: assessment.level,
+      action: 'deferred-to-user',
+      reason: assessment.reason,
+    };
+
+    if (assessment.level === 'SAFE' || assessment.level === 'MODERATE') {
+      const result = await this.inputRelay.sendReply(instance, 'yes');
+      if (result.success) {
+        entry.action = 'auto-approved';
+      } else {
+        entry.reason = `Relay failed: ${result.error}`;
+        // Allow retry on next state change
+        this.lastHandledNeeds.delete(instance.sessionId);
+      }
+    } else {
+      const notification: Notification = {
+        id: uuidv4(),
+        type: 'input-needed',
+        sessionId: instance.sessionId,
+        instanceName: instance.name,
+        message: `${assessment.level} action requires approval: ${instance.needs}`,
+        timestamp: Date.now(),
+        safetyLevel: assessment.level,
+      };
+      this.emit('notification', notification);
+    }
+
+    this.log.push(entry);
+    this.emit('autoyes:action', entry);
   }
 }

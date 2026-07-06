@@ -1,6 +1,6 @@
 {
   "name": "claupilot",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Interactive dashboard for monitoring and managing multiple Claude Code CLI instances",
   "type": "module",
   "bin": {
@@ -20,6 +20,8 @@
     "build:client": "cd client && npx vite build",
     "build:server": "npx tsc -p server/tsconfig.json",
     "start": "node bin/claupilot.js",
+    "test": "node --test --import tsx server/src/__tests__/*.test.ts",
+    "test:ci": "node --test --import tsx --reporter spec server/src/__tests__/*.test.ts",
     "typecheck": "npx tsc --noEmit -p server/tsconfig.json && cd client && npx tsc --noEmit",
     "prepublishOnly": "npm run build"
   },
@@ -42,18 +44,19 @@
   },
   "license": "MIT",
   "dependencies": {
-    "express": "^5.1.0",
-    "ws": "^8.18.0",
     "chokidar": "^5.0.0",
-    "uuid": "^14.0.1"
+    "express": "^5.1.0",
+    "minisearch": "^7.2.0",
+    "uuid": "^14.0.1",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
-    "@types/ws": "^8.18.0",
     "@types/node": "^26.1.0",
     "@types/uuid": "^10.0.0",
-    "typescript": "^6.0.3",
+    "@types/ws": "^8.18.0",
+    "concurrently": "^10.0.3",
     "tsx": "^4.19.0",
-    "concurrently": "^10.0.3"
+    "typescript": "^6.0.3"
   }
 }

@@ -82,6 +82,31 @@ export interface RosterData {
 
 export type SafetyLevel = 'SAFE' | 'MODERATE' | 'RISKY' | 'DANGEROUS';
 
+export type PermissionLevel = 'RESTRICTIVE' | 'MODERATE' | 'PERMISSIVE' | 'UNRESTRICTED';
+
+export type PermissionCategory = 'unrestricted' | 'dangerous' | 'risky' | 'moderate' | 'safe' | 'web' | 'file-broad' | 'file-narrow';
+
+export interface ParsedPermissionRule {
+  raw: string;
+  tool: string;
+  pattern?: string;
+  category: PermissionCategory;
+  points: number;
+  source: 'global' | 'project-shared' | 'project-local';
+}
+
+export interface PermissionProfile {
+  level: PermissionLevel;
+  score: number;
+  ruleCount: number;
+  rules: ParsedPermissionRule[];
+  sources: {
+    global: string[];
+    projectShared: string[];
+    projectLocal: string[];
+  };
+}
+
 export interface SafetyAssessment {
   level: SafetyLevel;
   reason: string;
@@ -109,6 +134,37 @@ export interface TrackedInstance {
   groupId?: string;
   autoYes: boolean;
   safetyLevel?: SafetyLevel;
+  contextWindowPercent?: number;
+  linkedPR?: { number: number; reviewState: string };
+  worktree?: { name: string; branch: string };
+  modelDisplayName?: string;
+  permissionLevel?: PermissionLevel;
+  permissionRuleCount?: number;
+}
+
+export interface StatusLineData {
+  model?: { display_name?: string };
+  context_window?: { remaining_percentage?: number };
+  workspace?: { repo?: { owner?: string; name?: string } };
+  pr?: { number?: number; review_state?: string };
+  worktree?: { name?: string; branch?: string };
+  session_name?: string;
+  agent?: { name?: string; type?: string };
+}
+
+export interface SearchResult {
+  sessionId: string;
+  cwd: string;
+  timestamp: number;
+  role: string;
+  snippet: string;
+  score: number;
+}
+
+export interface WebhookConfig {
+  url: string;
+  events: string[];
+  format: 'slack' | 'discord' | 'generic';
 }
 
 export interface Group {

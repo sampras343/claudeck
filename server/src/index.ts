@@ -1,5 +1,6 @@
 import express from 'express';
 import { createServer } from 'http';
+import type { Server } from 'http';
 import { WebSocketServer } from 'ws';
 import path from 'path';
 import fs from 'fs';
@@ -13,60 +14,100 @@ import { GroupManager } from './services/GroupManager.js';
 import { InstanceRegistry } from './services/InstanceRegistry.js';
 import { InputRelay } from './services/InputRelay.js';
 import { AutoYesManager } from './services/AutoYesManager.js';
+import { StatusLineReceiver } from './services/StatusLineReceiver.js';
+import { TranscriptIndexer } from './services/TranscriptIndexer.js';
+import { NotificationDispatcher } from './services/NotificationDispatcher.js';
 import { WebSocketHandler } from './ws/handler.js';
 import { createApiRouter } from './routes/api.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Create Express app
-const app = express();
-app.use(express.json());
+export interface StartServerResult {
+  app: express.Express;
+  server: Server;
+  cleanup: () => Promise<void>;
+}
 
-// Create HTTP server
-const server = createServer(app);
+export function startServer(port: number = SERVER_PORT): Promise<StartServerResult> {
+  const app = express();
+  app.use(express.json());
 
-// Create WebSocket server
-const wss = new WebSocketServer({ server, path: '/ws' });
+  const server = createServer(app);
+  const wss = new WebSocketServer({ server, path: '/ws' });
 
-// Instantiate watchers
-const sessionWatcher = new SessionWatcher();
-const jobWatcher = new JobWatcher();
-const rosterWatcher = new RosterWatcher();
+  const sessionWatcher = new SessionWatcher();
+  const jobWatcher = new JobWatcher();
+  const rosterWatcher = new RosterWatcher();
 
-// Instantiate services
-const groupManager = new GroupManager();
-const registry = new InstanceRegistry(sessionWatcher, jobWatcher, rosterWatcher, groupManager);
-const inputRelay = new InputRelay(rosterWatcher);
-const autoYesManager = new AutoYesManager(registry, inputRelay);
+  const groupManager = new GroupManager();
+  const statusLineReceiver = new StatusLineReceiver();
+  const transcriptIndexer = new TranscriptIndexer();
+  const notificationDispatcher = new NotificationDispatcher();
+  const registry = new InstanceRegistry(sessionWatcher, jobWatcher, rosterWatcher, groupManager, statusLineReceiver);
+  const inputRelay = new InputRelay(rosterWatcher);
+  const autoYesManager = new AutoYesManager(registry, inputRelay);
 
-// Set up WebSocket handler
-new WebSocketHandler(wss, registry, groupManager, inputRelay, autoYesManager);
+  new WebSocketHandler(wss, registry, groupManager, inputRelay, autoYesManager, undefined, notificationDispatcher);
 
-// Mount API routes
-const apiRouter = createApiRouter(registry, groupManager, inputRelay, autoYesManager);
-app.use('/api', apiRouter);
+  const apiRouter = createApiRouter(
+    registry,
+    groupManager,
+    inputRelay,
+    autoYesManager,
+    statusLineReceiver,
+    transcriptIndexer,
+    notificationDispatcher,
+  );
+  app.use('/api', apiRouter);
 
-// Serve static files from client/dist (works both in dev and when installed as a package)
-const pkgRoot = path.resolve(__dirname, '..', '..');
-const clientDistPath = path.resolve(pkgRoot, 'client', 'dist');
-if (fs.existsSync(clientDistPath)) {
-  app.use(express.static(clientDistPath));
-  // SPA fallback: serve index.html for non-API routes
-  app.get('/{*splat}', (_req, res) => {
-    res.sendFile(path.join(clientDistPath, 'index.html'));
+  const pkgRoot = path.resolve(__dirname, '..', '..');
+  const clientDistPath = path.resolve(pkgRoot, 'client', 'dist');
+  if (fs.existsSync(clientDistPath)) {
+    app.use(express.static(clientDistPath));
+    app.get('/{*splat}', (_req, res) => {
+      res.sendFile(path.join(clientDistPath, 'index.html'));
+    });
+  }
+
+  registry.start();
+  sessionWatcher.start();
+  jobWatcher.start();
+  rosterWatcher.start();
+  transcriptIndexer.start();
+
+  statusLineReceiver.on('status-line:update', (sessionName: string) => {
+    for (const instance of registry.getAll()) {
+      if (instance.name === sessionName) {
+        registry.setAutoYes(instance.sessionId, instance.autoYes);
+      }
+    }
+  });
+
+  const cleanup = async () => {
+    sessionWatcher.stop();
+    jobWatcher.stop();
+    rosterWatcher.stop();
+    wss.close();
+    await new Promise<void>((resolve, reject) => {
+      server.close((err) => (err ? reject(err) : resolve()));
+    });
+  };
+
+  return new Promise((resolve) => {
+    server.listen(port, '127.0.0.1', () => {
+      console.log(`[ClauPilot] Server listening on http://localhost:${port}`);
+      console.log(`[ClauPilot] Dashboard at http://localhost:${port}`);
+      resolve({ app, server, cleanup });
+    });
   });
 }
 
-// Subscribe to events BEFORE starting watchers so initial emissions are captured
-registry.start();
-sessionWatcher.start();
-jobWatcher.start();
-rosterWatcher.start();
+// Start the server when this file is run directly (not imported)
+const isDirectRun = process.argv[1] &&
+  (fileURLToPath(import.meta.url) === process.argv[1] ||
+   fileURLToPath(import.meta.url) === fs.realpathSync(process.argv[1]));
 
-// Start the server
-server.listen(SERVER_PORT, () => {
-  console.log(`[ClauPilot] Server listening on http://localhost:${SERVER_PORT}`);
-  console.log(`[ClauPilot] WebSocket available at ws://localhost:${SERVER_PORT}/ws`);
-  console.log(`[ClauPilot] API available at http://localhost:${SERVER_PORT}/api`);
-});
+if (isDirectRun) {
+  startServer();
+}

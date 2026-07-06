@@ -11,6 +11,9 @@ interface DashboardProps {
   onToggleGroupCollapse: (groupId: string) => void;
   onAssignInstance: (sessionId: string, groupId: string | null) => void;
   onViewPrompt: (instance: TrackedInstance) => void;
+  onCancel?: (instance: TrackedInstance) => void;
+  onStop?: (instance: TrackedInstance) => void;
+  onViewPermissions?: (instance: TrackedInstance) => void;
 }
 
 export function Dashboard({
@@ -21,6 +24,9 @@ export function Dashboard({
   onToggleGroupCollapse,
   onAssignInstance,
   onViewPrompt,
+  onCancel,
+  onStop,
+  onViewPermissions,
 }: DashboardProps) {
   const [ungroupedDragOver, setUngroupedDragOver] = useState(false);
 
@@ -91,6 +97,9 @@ export function Dashboard({
           onReply={onReply}
           onAutoYesToggle={onAutoYesToggle}
           onViewPrompt={onViewPrompt}
+          onCancel={onCancel}
+          onStop={onStop}
+          onViewPermissions={onViewPermissions}
           onDrop={(sessionId, groupId) => onAssignInstance(sessionId, groupId)}
         />
       ))}
@@ -127,6 +136,9 @@ export function Dashboard({
                   onReply={onReply}
                   onAutoYesToggle={onAutoYesToggle}
                   onViewPrompt={onViewPrompt}
+                  onCancel={onCancel}
+                  onStop={onStop}
+                  onViewPermissions={onViewPermissions}
                 />
               ))}
             </div>

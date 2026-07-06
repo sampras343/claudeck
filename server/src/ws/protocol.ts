@@ -4,6 +4,8 @@ import type {
   Notification,
   AutoYesLogEntry,
   InputRelayResult,
+  StatusLineData,
+  SearchResult,
 } from '../types.js';
 
 export type ServerMessage =
@@ -16,6 +18,7 @@ export type ServerMessage =
   | { type: 'notification'; notification: Notification }
   | { type: 'autoyes:log'; entry: AutoYesLogEntry }
   | { type: 'relay:result'; requestId: string; result: InputRelayResult }
+  | { type: 'status-line:update'; sessionName: string; data: StatusLineData }
   | { type: 'pong' };
 
 export type ClientMessage =

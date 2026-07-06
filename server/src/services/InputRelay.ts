@@ -16,29 +16,49 @@ export class InputRelay {
   constructor(private rosterWatcher: RosterWatcher) {}
 
   async sendReply(instance: TrackedInstance, text: string): Promise<InputRelayResult> {
-    if (instance.shortId && instance.kind === 'bg') {
-      return this.sendViaRendezvous(instance.shortId, text);
-    }
     return this.sendViaPty(instance, text);
+  }
+
+  sendSignal(pid: number, action: 'cancel' | 'stop'): InputRelayResult {
+    try {
+      if (action === 'cancel') {
+        process.kill(pid, 'SIGINT');
+      } else {
+        process.kill(pid, 'SIGTERM');
+      }
+      return { success: true, method: 'pty' };
+    } catch (err) {
+      return { success: false, method: 'pty', error: (err as Error).message };
+    }
   }
 
   private async sendViaPty(instance: TrackedInstance, text: string): Promise<InputRelayResult> {
     const prompt = extractPendingPrompt(instance.sessionId, instance.cwd);
 
     if (prompt.type === 'ask-user') {
-      // Find which option index the user selected by matching the label
       const allOptions = prompt.questions.flatMap(q => q.options);
       const idx = allOptions.findIndex(o => o.label === text);
       if (idx >= 0) {
         return this.sendPtyKeystrokes(instance.pid, 'select', idx);
       }
-      // "Other" — select past all options then type
       return this.sendPtyKeystrokes(instance.pid, 'select-other', allOptions.length, text);
     }
 
     if (prompt.type === 'tool-permission') {
-      const ptyText = text === 'yes' ? 'y' : text === 'no' ? 'n' : text;
-      return this.sendPtyRaw(instance.pid, ptyText);
+      if (text === 'yes') {
+        return this.sendPtyKeystrokes(instance.pid, 'select', 0);
+      }
+      if (text === 'no') {
+        const lastIdx = (prompt.options?.length ?? 3) - 1;
+        return this.sendPtyKeystrokes(instance.pid, 'select', lastIdx);
+      }
+      if (prompt.options?.length) {
+        const idx = prompt.options.findIndex(o => o.value === text);
+        if (idx >= 0) {
+          return this.sendPtyKeystrokes(instance.pid, 'select', idx);
+        }
+      }
+      return this.sendPtyRaw(instance.pid, text);
     }
 
     // Free-text or unknown: send as typed text

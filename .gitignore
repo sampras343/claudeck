@@ -3,3 +3,4 @@ client/dist/
 server/dist/
 *.tgz
 .claude/
+__pycache__/
